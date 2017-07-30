@@ -444,5 +444,5 @@ sub vcl_fini {
 
 
 if(std.file_exsit("/etc/varnish/.all_includes.vcl")){
-  include "/etc/varnish/.all_includes.vcl"
+  include "/etc/varnish/.all_includes.vcl";
 }
