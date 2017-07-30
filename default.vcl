@@ -63,10 +63,6 @@ acl purge {
 sub vcl_init {
   # Called when VCL is loaded, before any requests pass through it.
   # Typically used to initialize VMODs.
-
-
-  unset req.http.Cache-Control;
-  unset req.http.Pragma;
  
   new vdir = directors.round_robin();
   vdir.add_backend(server1);
@@ -87,6 +83,10 @@ sub vcl_recv {
 
   # Remove the proxy header (see https://httpoxy.org/#mitigate-varnish)
   unset req.http.proxy;
+
+  #disable client side cache control , like force refresh ctrl+F5 
+  unset req.http.Cache-Control;
+  unset req.http.Pragma;
 
   # Allow purging
   if (req.method == "PURGE") {
