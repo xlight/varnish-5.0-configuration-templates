@@ -52,7 +52,6 @@ backend server2 { # Define one backend
   .connect_timeout        = 5s;     # How long to wait for a backend connection?
   .between_bytes_timeout  = 2s;     # How long to wait between bytes received from our backend?
 }
-import urlsort;
 
 acl purge {
   # ACL we'll use later to allow purges
