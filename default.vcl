@@ -5,7 +5,7 @@ import std;
 import directors;
 
 backend server1 { # Define one backend
-  .host = "127.0.0.1";    # IP or Hostname of backend
+  .host = "backend1";    # IP or Hostname of backend
   .port = "80";           # Port Apache or whatever is listening
   .max_connections = 300; # That's it
 
@@ -28,6 +28,31 @@ backend server1 { # Define one backend
   .connect_timeout        = 5s;     # How long to wait for a backend connection?
   .between_bytes_timeout  = 2s;     # How long to wait between bytes received from our backend?
 }
+backend server2 { # Define one backend
+  .host = "backend2";    # IP or Hostname of backend
+  .port = "80";           # Port Apache or whatever is listening
+  .max_connections = 300; # That's it
+
+  .probe = {
+    #.url = "/"; # short easy way (GET /)
+    # We prefer to only do a HEAD /
+    .request =
+      "HEAD / HTTP/1.1"
+      "Host: localhost"
+      "Connection: close"
+      "User-Agent: Varnish Health Probe";
+
+    .interval  = 5s; # check the health of each backend every 5 seconds
+    .timeout   = 1s; # timing out after 1 second.
+    .window    = 5;  # If 3 out of the last 5 polls succeeded the backend is considered healthy, otherwise it will be marked as sick
+    .threshold = 3;
+  }
+
+  .first_byte_timeout     = 300s;   # How long to wait before we receive a first byte from our backend?
+  .connect_timeout        = 5s;     # How long to wait for a backend connection?
+  .between_bytes_timeout  = 2s;     # How long to wait between bytes received from our backend?
+}
+import urlsort;
 
 acl purge {
   # ACL we'll use later to allow purges
@@ -40,9 +65,13 @@ sub vcl_init {
   # Called when VCL is loaded, before any requests pass through it.
   # Typically used to initialize VMODs.
 
+
+  unset req.http.Cache-Control;
+  unset req.http.Pragma;
+ 
   new vdir = directors.round_robin();
   vdir.add_backend(server1);
-  # vdir.add_backend(server...);
+  vdir.add_backend(server2);
   # vdir.add_backend(servern);
 }
 
@@ -114,7 +143,10 @@ sub vcl_recv {
   if (req.url ~ "\?$") {
     set req.url = regsub(req.url, "\?$", "");
   }
-
+  
+  # sort url query string，for better hash same requests
+  set req.url = urlsort.sortquery(req.url);
+  
   # Some generic cookie manipulation, useful for all templates that follow
   # Remove the "has_js" cookie
   set req.http.Cookie = regsuball(req.http.Cookie, "has_js=[^;]+(; )?", "");
@@ -300,6 +332,9 @@ sub vcl_backend_response {
   # Before you blindly enable this, have a read here: https://ma.ttias.be/stop-caching-static-files/
   if (bereq.url ~ "^[^?]*\.(7z|avi|bmp|bz2|css|csv|doc|docx|eot|flac|flv|gif|gz|ico|jpeg|jpg|js|less|mka|mkv|mov|mp3|mp4|mpeg|mpg|odt|otf|ogg|ogm|opus|pdf|png|ppt|pptx|rar|rtf|svg|svgz|swf|tar|tbz|tgz|ttf|txt|txz|wav|webm|webp|woff|woff2|xls|xlsx|xml|xz|zip)(\?.*)?$") {
     unset beresp.http.set-cookie;
+    set beresp.ttl = 1w;
+    unset beresp.http.Expires;
+    set beresp.http.Cache-Control= "s-max-age=604800";
   }
 
   # Large static files are delivered directly to the end-user without
@@ -310,6 +345,11 @@ sub vcl_backend_response {
     set beresp.do_stream = true;  # Check memory usage it'll grow in fetch_chunksize blocks (128k by default) if the backend doesn't send a Content-Length header, so only enable it for big objects
   }
 
+  # force gzip js,css,json ,even they do not have a proper ext name.
+  if (beresp.http.Content-Type ~ "(javascript|text|json)")    {
+    set beresp.do_gzip = true;
+  }
+ 
   # Sometimes, a 301 or 302 redirect formed via Apache's mod_rewrite can mess with the HTTP port that is being passed along.
   # This often happens with simple rewrite rules in a scenario where Varnish runs on :80 and Apache on :8080 on the same box.
   # A redirect can then often redirect the end-user to a URL on :8080, where it should be :80.
@@ -327,9 +367,9 @@ sub vcl_backend_response {
     return (deliver);
   }
 
-  # Don't cache 50x responses
-  if (beresp.status == 500 || beresp.status == 502 || beresp.status == 503 || beresp.status == 504) {
-    return (abandon);
+  # cache 50x/40x responses for a little while, make less error requests to backend
+  if (beresp.status == 500 || beresp.status == 502 || beresp.status == 503 || beresp.status == 504 || beresp.status == 404 ) {
+     set beresp.ttl = 10s;
   }
 
   # Allow stale content, in case the backend goes down.
@@ -365,6 +405,8 @@ sub vcl_deliver {
   unset resp.http.Via;
   unset resp.http.Link;
   unset resp.http.X-Generator;
+  
+  set resp.http.Server = "Hector Server v1.5 by @xLight";
 
   return (deliver);
 }
