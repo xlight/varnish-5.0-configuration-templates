@@ -443,6 +443,6 @@ sub vcl_fini {
 }
 
 
-if(std.file_exsit("/etc/varnish.d/.all_includes.vcl")){
-  include "/etc/varnish.d/.all_includes.vcl";
-}
+
+include "/etc/varnish.d/.all_includes.vcl";
+
