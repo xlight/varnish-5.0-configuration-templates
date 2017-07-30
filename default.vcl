@@ -88,9 +88,6 @@ sub vcl_recv {
   # Remove the proxy header (see https://httpoxy.org/#mitigate-varnish)
   unset req.http.proxy;
 
-  # Normalize the query arguments
-  set req.url = std.querysort(req.url);
-
   # Allow purging
   if (req.method == "PURGE") {
     if (!client.ip ~ purge) { # purge is the ACL defined at the begining
@@ -143,8 +140,8 @@ sub vcl_recv {
     set req.url = regsub(req.url, "\?$", "");
   }
   
-  # sort url query string，for better hash same requests
-  set req.url = urlsort.sortquery(req.url);
+  # Normalize the query arguments
+  set req.url = std.querysort(req.url);
   
   # Some generic cookie manipulation, useful for all templates that follow
   # Remove the "has_js" cookie
